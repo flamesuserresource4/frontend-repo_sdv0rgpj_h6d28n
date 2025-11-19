@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Mic, Scissors, Gamepad2, UploadCloud, Clock, Link2, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Mic, Scissors, Gamepad2, UploadCloud, Clock, Link2, CheckCircle2, AlertTriangle, Sparkles, FileText } from 'lucide-react'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -31,10 +31,20 @@ function Panel({ title, description, onUpload, children }) {
   )
 }
 
+function JSONBlock({ data }) {
+  return (
+    <pre className="mt-4 w-full overflow-auto rounded-lg bg-black/40 p-4 text-xs text-emerald-200 border border-emerald-500/20">
+      {JSON.stringify(data, null, 2)}
+    </pre>
+  )
+}
+
 export default function Dashboard() {
   const [active, setActive] = useState('voice')
   const [videoURL, setVideoURL] = useState('')
   const [urlStatus, setUrlStatus] = useState({ state: 'idle' }) // idle | checking | ok | error
+  const [jobResult, setJobResult] = useState(null)
+  const [loading, setLoading] = useState(false)
 
   const validateURL = async () => {
     if (!videoURL) return
@@ -57,7 +67,8 @@ export default function Dashboard() {
   }
 
   const ingestURL = async () => {
-    if (urlStatus.state !== 'ok') return validateURL()
+    if (!videoURL) return alert('Paste a YouTube/video URL first')
+    if (urlStatus.state !== 'ok') await validateURL()
     try {
       const res = await fetch(`${BACKEND}/api/ingest/url`, {
         method: 'POST',
@@ -65,10 +76,58 @@ export default function Dashboard() {
         body: JSON.stringify({ url: videoURL })
       })
       const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail || 'Failed to ingest')
       alert(data.video_id ? 'Ingested! Video ID: ' + data.video_id : 'Failed: ' + (data.detail || 'Unknown error'))
+      return data.video_id
     } catch (e) {
       alert('Error: ' + String(e))
     }
+  }
+
+  const createJob = async (job_type, params = {}) => {
+    setLoading(true)
+    setJobResult(null)
+    try {
+      const res = await fetch(`${BACKEND}/api/jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_type, params })
+      })
+      const data = await res.json()
+      setJobResult(data)
+    } catch (e) {
+      setJobResult({ error: String(e) })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const runClipCutter = async () => {
+    if (!videoURL) return alert('Paste a YouTube/video URL first')
+    if (urlStatus.state !== 'ok') await validateURL()
+    await createJob('clip_cutter', {
+      target_duration_s: 40,
+      font: 'Inter',
+      platforms: ['tiktok','youtube_shorts','instagram_reels']
+    })
+  }
+
+  const runDopamineStory = async () => {
+    if (!videoURL) return alert('Paste a YouTube/video URL first')
+    if (urlStatus.state !== 'ok') await validateURL()
+    await createJob('dopamine_story', {
+      style: 'reddit',
+      beats: 8,
+      platform: 'tiktok'
+    })
+  }
+
+  const runAIScriptWriter = async () => {
+    await createJob('ai_script_writer', {
+      topic: 'unexpected twist in a normal day',
+      tone: 'fast_paced',
+      max_lines: 10
+    })
   }
 
   return (
@@ -78,6 +137,9 @@ export default function Dashboard() {
           <h2 className="text-2xl md:text-4xl font-bold tracking-tight">Dashboard</h2>
           <div className="flex items-center gap-2">
             <Tab label="Voice Sync" active={active==='voice'} onClick={() => setActive('voice')} />
+            <Tab label="Clip Cutter" active={active==='clip'} onClick={() => setActive('clip')} />
+            <Tab label="Dopamine Story" active={active==='story'} onClick={() => setActive('story')} />
+            <Tab label="AI Script Writer" active={active==='script'} onClick={() => setActive('script')} />
             <Tab label="Viral Clips" active={active==='viral'} onClick={() => setActive('viral')} />
             <Tab label="Minecraft Story" active={active==='mc'} onClick={() => setActive('mc')} />
           </div>
@@ -88,7 +150,7 @@ export default function Dashboard() {
             <div className="flex flex-col md:flex-row items-center gap-3">
               <div className="flex items-center gap-2 w-full md:w-auto">
                 <Link2 className="w-4 h-4 text-white/70" />
-                <input value={videoURL} onChange={e=>setVideoURL(e.target.value)} placeholder="Paste a video URL (mp4, mkv, webm...)" className="w-full md:w-[460px] px-3 py-2 rounded-lg bg-white/10 border border-white/10 outline-none placeholder-white/50" />
+                <input value={videoURL} onChange={e=>setVideoURL(e.target.value)} placeholder="Paste a video or YouTube URL" className="w-full md:w-[460px] px-3 py-2 rounded-lg bg-white/10 border border-white/10 outline-none placeholder-white/50" />
               </div>
               <div className="flex gap-2 w-full md:w-auto">
                 <button onClick={validateURL} className="px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold">Check Link</button>
@@ -118,6 +180,66 @@ export default function Dashboard() {
                   <div className="rounded-lg bg-white/5 p-3">Export: SRT, VTT, JSON, Kinetic Text</div>
                   <div className="rounded-lg bg-white/5 p-3">Templates: TikTok, Reels, Shorts</div>
                 </div>
+              </div>
+            </Panel>
+          )}
+
+          {active === 'clip' && (
+            <Panel
+              title="Clip Cutter"
+              description="Auto-build a ~40s final cut: trims, removes silence, stabilizes and balances audio."
+              onUpload={() => runClipCutter()}
+            >
+              <div className="rounded-xl border border-white/10 p-4">
+                <div className="flex items-center gap-3 text-white/80">
+                  <Scissors className="w-5 h-5" /> Finds the strongest moments and assembles a final cut.
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+                  <button disabled={loading} onClick={runClipCutter} className="px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold inline-flex items-center gap-2 disabled:opacity-60">
+                    <Sparkles className="w-4 h-4" /> {loading ? 'Processing…' : 'Generate Cut'}
+                  </button>
+                </div>
+                {jobResult && <JSONBlock data={jobResult} />}
+              </div>
+            </Panel>
+          )}
+
+          {active === 'story' && (
+            <Panel
+              title="Dopamine Story"
+              description="Writes a short, punchy Reddit-style story, narrates it, syncs subtitles, and overlays on your video."
+              onUpload={() => runDopamineStory()}
+            >
+              <div className="rounded-xl border border-white/10 p-4">
+                <div className="flex items-center gap-3 text-white/80">
+                  <Sparkles className="w-5 h-5" /> Fast-paced narration with tight visual loops.
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+                  <button disabled={loading} onClick={runDopamineStory} className="px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold inline-flex items-center gap-2 disabled:opacity-60">
+                    <Sparkles className="w-4 h-4" /> {loading ? 'Building…' : 'Create Story'}
+                  </button>
+                </div>
+                {jobResult && <JSONBlock data={jobResult} />}
+              </div>
+            </Panel>
+          )}
+
+          {active === 'script' && (
+            <Panel
+              title="AI Script Writer"
+              description="Produces short, fast-paced scripts with clean structure and zero filler."
+              onUpload={() => runAIScriptWriter()}
+            >
+              <div className="rounded-xl border border-white/10 p-4">
+                <div className="flex items-center gap-3 text-white/80">
+                  <FileText className="w-5 h-5" /> Generates a script ready for voice and subtitle sync.
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+                  <button disabled={loading} onClick={runAIScriptWriter} className="px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold inline-flex items-center gap-2 disabled:opacity-60">
+                    <Sparkles className="w-4 h-4" /> {loading ? 'Writing…' : 'Write Script'}
+                  </button>
+                </div>
+                {jobResult && <JSONBlock data={jobResult} />}
               </div>
             </Panel>
           )}
