@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { Mic, Scissors, Gamepad2, UploadCloud, Settings, Clock } from 'lucide-react'
+import { Mic, Scissors, Gamepad2, UploadCloud, Clock, Link2, CheckCircle2, AlertTriangle } from 'lucide-react'
+
+const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
 function Tab({ label, active, onClick }) {
   return (
@@ -21,7 +23,7 @@ function Panel({ title, description, onUpload, children }) {
           <p className="text-white/70 text-sm mt-1">{description}</p>
         </div>
         <button onClick={onUpload} className="inline-flex items-center gap-2 rounded-lg bg-white text-slate-900 px-3 py-2 font-semibold shadow hover:shadow-md transition">
-          <UploadCloud className="w-4 h-4" /> Upload
+          <UploadCloud className="w-4 h-4" /> Upload / Link
         </button>
       </div>
       <div className="mt-6">{children}</div>
@@ -31,6 +33,43 @@ function Panel({ title, description, onUpload, children }) {
 
 export default function Dashboard() {
   const [active, setActive] = useState('voice')
+  const [videoURL, setVideoURL] = useState('')
+  const [urlStatus, setUrlStatus] = useState({ state: 'idle' }) // idle | checking | ok | error
+
+  const validateURL = async () => {
+    if (!videoURL) return
+    setUrlStatus({ state: 'checking' })
+    try {
+      const res = await fetch(`${BACKEND}/api/validate-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: videoURL })
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setUrlStatus({ state: 'ok', details: data })
+      } else {
+        setUrlStatus({ state: 'error', details: data })
+      }
+    } catch (e) {
+      setUrlStatus({ state: 'error', details: { reason: String(e) } })
+    }
+  }
+
+  const ingestURL = async () => {
+    if (urlStatus.state !== 'ok') return validateURL()
+    try {
+      const res = await fetch(`${BACKEND}/api/ingest/url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: videoURL })
+      })
+      const data = await res.json()
+      alert(data.video_id ? 'Ingested! Video ID: ' + data.video_id : 'Failed: ' + (data.detail || 'Unknown error'))
+    } catch (e) {
+      alert('Error: ' + String(e))
+    }
+  }
 
   return (
     <section id="dashboard" className="relative bg-slate-950 text-white py-16 md:py-24">
@@ -45,11 +84,31 @@ export default function Dashboard() {
         </div>
 
         <div className="mt-8 grid gap-6">
+          <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.03] p-6">
+            <div className="flex flex-col md:flex-row items-center gap-3">
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <Link2 className="w-4 h-4 text-white/70" />
+                <input value={videoURL} onChange={e=>setVideoURL(e.target.value)} placeholder="Paste a video URL (mp4, mkv, webm...)" className="w-full md:w-[460px] px-3 py-2 rounded-lg bg-white/10 border border-white/10 outline-none placeholder-white/50" />
+              </div>
+              <div className="flex gap-2 w-full md:w-auto">
+                <button onClick={validateURL} className="px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold">Check Link</button>
+                <button onClick={ingestURL} className="px-3 py-2 rounded-lg bg-emerald-400 text-emerald-900 font-semibold">Use Video</button>
+              </div>
+              {urlStatus.state === 'checking' && <span className="text-white/70 text-sm">Checking...</span>}
+              {urlStatus.state === 'ok' && (
+                <span className="inline-flex items-center gap-1 text-emerald-300 text-sm"><CheckCircle2 className="w-4 h-4"/> Valid video</span>
+              )}
+              {urlStatus.state === 'error' && (
+                <span className="inline-flex items-center gap-1 text-rose-300 text-sm"><AlertTriangle className="w-4 h-4"/> {urlStatus?.details?.reason || 'Invalid URL'}</span>
+              )}
+            </div>
+          </div>
+
           {active === 'voice' && (
             <Panel
               title="Voice Synced Word Display"
               description="Upload audio or video. We'll align words to speech and generate captions."
-              onUpload={() => alert('Upload placeholder - connect API later')}
+              onUpload={() => ingestURL()}
             >
               <div className="rounded-xl border border-white/10 p-4">
                 <div className="flex items-center gap-3 text-white/80">
@@ -67,7 +126,7 @@ export default function Dashboard() {
             <Panel
               title="Viral Moment Detection"
               description="Score clips for energy, pacing, and keywords. Auto-cut the best moments."
-              onUpload={() => alert('Upload placeholder - connect API later')}
+              onUpload={() => ingestURL()}
             >
               <div className="rounded-xl border border-white/10 p-4">
                 <div className="flex items-center gap-3 text-white/80">
@@ -86,7 +145,7 @@ export default function Dashboard() {
             <Panel
               title="Minecraft Story Generation"
               description="Analyze gameplay events and turn them into a structured narrative."
-              onUpload={() => alert('Upload placeholder - connect API later')}
+              onUpload={() => ingestURL()}
             >
               <div className="rounded-xl border border-white/10 p-4">
                 <div className="flex items-center gap-3 text-white/80">
