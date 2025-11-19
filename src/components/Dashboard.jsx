@@ -43,6 +43,8 @@ export default function Dashboard() {
   const [active, setActive] = useState('voice')
   const [videoURL, setVideoURL] = useState('')
   const [urlStatus, setUrlStatus] = useState({ state: 'idle' }) // idle | checking | ok | error
+  const [ingestedVideoId, setIngestedVideoId] = useState(null)
+  const [extractedInfo, setExtractedInfo] = useState(null)
   const [jobResult, setJobResult] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -68,7 +70,7 @@ export default function Dashboard() {
 
   const ingestURL = async () => {
     if (!videoURL) return alert('Paste a YouTube/video URL first')
-    if (urlStatus.state !== 'ok') await validateURL()
+    // Always call ingest; backend handles YouTube extraction when needed
     try {
       const res = await fetch(`${BACKEND}/api/ingest/url`, {
         method: 'POST',
@@ -77,7 +79,10 @@ export default function Dashboard() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail || 'Failed to ingest')
-      alert(data.video_id ? 'Ingested! Video ID: ' + data.video_id : 'Failed: ' + (data.detail || 'Unknown error'))
+      setIngestedVideoId(data.video_id)
+      setExtractedInfo(data.extracted || null)
+      setUrlStatus({ state: data.validation?.ok ? 'ok' : 'error', details: data.validation })
+      alert('Video ready!')
       return data.video_id
     } catch (e) {
       alert('Error: ' + String(e))
@@ -85,13 +90,17 @@ export default function Dashboard() {
   }
 
   const createJob = async (job_type, params = {}) => {
+    if ((job_type === 'clip_cutter' || job_type === 'dopamine_story') && !ingestedVideoId) {
+      alert('Use Video first to attach the media')
+      return
+    }
     setLoading(true)
     setJobResult(null)
     try {
       const res = await fetch(`${BACKEND}/api/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job_type, params })
+        body: JSON.stringify({ job_type, video_id: ingestedVideoId, params })
       })
       const data = await res.json()
       setJobResult(data)
@@ -103,8 +112,6 @@ export default function Dashboard() {
   }
 
   const runClipCutter = async () => {
-    if (!videoURL) return alert('Paste a YouTube/video URL first')
-    if (urlStatus.state !== 'ok') await validateURL()
     await createJob('clip_cutter', {
       target_duration_s: 40,
       font: 'Inter',
@@ -113,8 +120,6 @@ export default function Dashboard() {
   }
 
   const runDopamineStory = async () => {
-    if (!videoURL) return alert('Paste a YouTube/video URL first')
-    if (urlStatus.state !== 'ok') await validateURL()
     await createJob('dopamine_story', {
       style: 'reddit',
       beats: 8,
@@ -164,6 +169,20 @@ export default function Dashboard() {
                 <span className="inline-flex items-center gap-1 text-rose-300 text-sm"><AlertTriangle className="w-4 h-4"/> {urlStatus?.details?.reason || 'Invalid URL'}</span>
               )}
             </div>
+            {(extractedInfo || ingestedVideoId) && (
+              <div className="mt-4 text-xs text-white/80">
+                {ingestedVideoId && <div className="mb-1">Attached Media: <span className="font-mono text-emerald-300">{ingestedVideoId}</span></div>}
+                {extractedInfo && (
+                  <div className="grid sm:grid-cols-3 gap-2">
+                    <div className="rounded-md bg-white/5 border border-white/10 p-2">Container: {extractedInfo.container || 'n/a'}</div>
+                    <div className="rounded-md bg-white/5 border border-white/10 p-2">Resolution: {extractedInfo.resolution || 'n/a'}</div>
+                    <div className="rounded-md bg-white/5 border border-white/10 p-2">Duration: {extractedInfo.duration ? `${extractedInfo.duration}s` : 'n/a'}</div>
+                    <div className="rounded-md bg-white/5 border border-white/10 p-2">Audio: {extractedInfo.has_audio ? `yes (${extractedInfo.audio_codec||'?'})` : 'no'}</div>
+                    <div className="rounded-md bg-white/5 border border-white/10 p-2">Video: {extractedInfo.has_video ? `yes (${extractedInfo.video_codec||'?'})` : 'no'}</div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {active === 'voice' && (
