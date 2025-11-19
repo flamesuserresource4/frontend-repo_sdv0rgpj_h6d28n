@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Mic, Scissors, Gamepad2, UploadCloud, Clock, Link2, CheckCircle2, AlertTriangle, Sparkles, FileText } from 'lucide-react'
+import { Mic, Scissors, Gamepad2, UploadCloud, Clock, Link2, CheckCircle2, AlertTriangle, Sparkles, FileText, Tag } from 'lucide-react'
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -52,8 +52,14 @@ export default function Dashboard() {
 
   // Upload state
   const [uploadFileObj, setUploadFileObj] = useState(null)
+  const defaultCategories = ['uncategorized','tutorials','gaming','podcast','vlog','education','music','review']
+  const [categoryMode, setCategoryMode] = useState('pick') // pick | custom
   const [uploadCategory, setUploadCategory] = useState('uncategorized')
+  const [customCategory, setCustomCategory] = useState('')
+  const [lastUploadedCategory, setLastUploadedCategory] = useState(null)
   const [uploading, setUploading] = useState(false)
+
+  const currentCategory = categoryMode === 'custom' ? (customCategory || 'uncategorized') : uploadCategory
 
   const validateURL = async () => {
     if (!videoURL) return
@@ -88,6 +94,7 @@ export default function Dashboard() {
       setIngestedVideoId(data.video_id)
       setExtractedInfo(data.extracted || null)
       setUrlStatus({ state: data.validation?.ok ? 'ok' : 'error', details: data.validation })
+      setLastUploadedCategory(null) // URL ingest has no category
       alert('Video ready!')
       return data.video_id
     } catch (e) {
@@ -97,11 +104,13 @@ export default function Dashboard() {
 
   const uploadLocalFile = async () => {
     if (!uploadFileObj) return alert('Choose a file to upload')
+    const cat = currentCategory.trim()
+    if (!cat) return alert('Please pick or enter a category')
     setUploading(true)
     try {
       const form = new FormData()
       form.append('file', uploadFileObj)
-      form.append('category', uploadCategory || 'uncategorized')
+      form.append('category', cat)
       const res = await fetch(`${BACKEND}/api/ingest/upload`, {
         method: 'POST',
         body: form,
@@ -110,6 +119,7 @@ export default function Dashboard() {
       if (!res.ok) throw new Error(data?.detail || 'Upload failed')
       setIngestedVideoId(data.video_id)
       setExtractedInfo(null)
+      setLastUploadedCategory(data?.upload?.category || cat)
       setUrlStatus({ state: 'ok', details: { ok: true, reason: null, content_type: data?.upload?.content_type || 'upload', content_length: data?.upload?.size_bytes || null } })
       alert('Upload queued!')
     } catch (e) {
@@ -184,8 +194,8 @@ export default function Dashboard() {
           <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.03] p-6">
             <div className="flex flex-col gap-4">
               {/* URL row */}
-              <div className="flex flex-col md:flex-row items-center gap-3">
-                <div className="flex items-center gap-2 w-full md:w-auto">
+              <div className="flex flex-col md:flex-row items-center gap-3 w-full">
+                <div className="flex items-center gap-2 w-full md:w-auto flex-1">
                   <Link2 className="w-4 h-4 text-white/70" />
                   <input value={videoURL} onChange={e=>setVideoURL(e.target.value)} placeholder="Paste a video or YouTube URL" className="w-full md:w-[460px] px-3 py-2 rounded-lg bg-white/10 border border-white/10 outline-none placeholder-white/50" />
                 </div>
@@ -217,29 +227,59 @@ export default function Dashboard() {
 
               {/* Upload row */}
               <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <UploadCloud className="w-4 h-4 text-white/70" />
-                    <input type="file" accept="video/*,audio/*" onChange={e=>setUploadFileObj(e.target.files?.[0] || null)} className="text-sm" />
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <UploadCloud className="w-4 h-4 text-white/70" />
+                      <input type="file" accept="video/*,audio/*" onChange={e=>setUploadFileObj(e.target.files?.[0] || null)} className="text-sm" />
+                    </div>
+
+                    {/* Category picker */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                      <label className="text-xs text-white/60 flex items-center gap-1"><Tag className="w-3 h-3"/> Category</label>
+                      <div className="flex items-center gap-2">
+                        <select value={categoryMode === 'custom' ? 'custom' : uploadCategory} onChange={e => {
+                          if (e.target.value === 'custom') {
+                            setCategoryMode('custom')
+                          } else {
+                            setCategoryMode('pick')
+                            setUploadCategory(e.target.value)
+                          }
+                        }} className="px-2 py-2 rounded-lg bg-white/10 border border-white/10 text-sm">
+                          {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                          <option value="custom">Custom…</option>
+                        </select>
+                        {categoryMode === 'custom' && (
+                          <input value={customCategory} onChange={e=>setCustomCategory(e.target.value)} placeholder="type a category" className="px-3 py-2 rounded-lg bg-white/10 border border-white/10 outline-none placeholder-white/50 text-sm" />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button disabled={uploading} onClick={uploadLocalFile} className="px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold disabled:opacity-60">
+                        {uploading ? 'Uploading…' : 'Upload File'}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-white/60">Category</label>
-                    <input value={uploadCategory} onChange={e=>setUploadCategory(e.target.value)} placeholder="e.g. tutorials, gaming" className="px-3 py-2 rounded-lg bg-white/10 border border-white/10 outline-none placeholder-white/50 text-sm" />
-                  </div>
-                  <div className="flex gap-2">
-                    <button disabled={uploading} onClick={uploadLocalFile} className="px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold disabled:opacity-60">
-                      {uploading ? 'Uploading…' : 'Upload File'}
-                    </button>
-                  </div>
+
+                  {uploadFileObj && (
+                    <p className="text-xs text-white/60">Selected: {uploadFileObj.name} ({Math.round(uploadFileObj.size/1024)} KB)</p>
+                  )}
                 </div>
-                {uploadFileObj && (
-                  <p className="mt-2 text-xs text-white/60">Selected: {uploadFileObj.name} ({Math.round(uploadFileObj.size/1024)} KB)</p>
-                )}
               </div>
 
               {(extractedInfo || ingestedVideoId) && (
                 <div className="mt-2 text-xs text-white/80">
-                  {ingestedVideoId && <div className="mb-1">Attached Media: <span className="font-mono text-emerald-300">{ingestedVideoId}</span></div>}
+                  {ingestedVideoId && (
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                      <span>Attached Media: <span className="font-mono text-emerald-300">{ingestedVideoId}</span></span>
+                      {lastUploadedCategory && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-400/10 text-emerald-300 border border-emerald-400/20">
+                          <Tag className="w-3 h-3"/> {lastUploadedCategory}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {extractedInfo && (
                     <div className="grid sm:grid-cols-3 gap-2">
                       <div className="rounded-md bg-white/5 border border-white/10 p-2">Container: {extractedInfo.container || 'n/a'}</div>
